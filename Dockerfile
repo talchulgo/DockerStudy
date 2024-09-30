@@ -20,6 +20,42 @@ USER root
 # features (e.g., download as all possible file formats)
 ENV DEBIAN_FRONTEND noninteractive
 
+RUN apt-get update && \
+    apt-get install -yq --no-install-recommends \
+    apt-utils \
+    build-essential \
+    tini \
+    wget \
+    bzip2 \
+    ca-certificates \
+    vim \
+    curl \
+    net-tools \
+    gettext \
+    unzip \
+    supervisor \
+    openssh-server \
+    gnupg \
+    git \
+    sudo \
+    locales \
+    fonts-liberation \
+    pandoc \
+    run-one && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Graphic Library & Database Client
+RUN apt-get update && \
+    apt-get install -yq \
+    libgl1-mesa-dev \
+    libglu1-mesa-dev \
+    mariadb-client \
+    postgresql-client \
+    fonts-nanum fonts-nanum-coding fonts-nanum-extra && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 # Configure Container Environment
 ENV CONDA_DIR=/opt/conda \
     SHELL=/bin/bash \
@@ -31,8 +67,7 @@ ENV CONDA_DIR=/opt/conda \
     LANGUAGE=en_US.UTF8 \
     PIP_USE_FEATURE=2020-resolver
 ENV PATH=$CONDA_DIR/bin:$PATH \
-    HOME=/home/$NB_USER
-ENV TZ=Asia/Seoul
+    TZ=Asia/Seoul
 
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && \
     echo $TZ > /etc/timezone
@@ -44,65 +79,66 @@ RUN chmod a+rx /usr/local/bin/fix-permissions
 # Enable prompt color in the skeleton .bashrc before creating the default NB_USER
 RUN sed -i 's/^#force_color_prompt=yes/force_color_prompt=yes/' /etc/skel/.bashrc
 
-# Create NB_USER
+# Create NB_USER with name posco user with UID=10000
 RUN echo "auth requisite pam_deny.so" >> /etc/pam.d/su && \
     sed -i.bak -e 's/^%admin/#%admin/' /etc/sudoers && \
     sed -i.bak -e 's/^%sudo/#%sudo/' /etc/sudoers && \
+    groupadd -g $NB_GID $NB_USER && \
     useradd -m -s /bin/bash -N -u $NB_UID $NB_USER && \
+    echo "%$NB_USER ALL=NOPASSWD: ALL" >> /etc/sudoers && \
+    mkdir -p /home/user && \
     mkdir -p $CONDA_DIR && \
     chown $NB_USER:$NB_GID $CONDA_DIR && \
     chmod g+w /etc/passwd && \
-    fix-permissions $HOME && \
+    fix-permissions /home/$NB_USER && \
     fix-permissions $CONDA_DIR
 
 USER $NB_UID
-WORKDIR $HOME
+ARG PYTHON_VERSION=default
 
-# Setup work directory for backward-compatibility
-RUN mkdir /home/$NB_USER/work && \
-    fix-permissions /home/$NB_USER
+ENV MINICONDA_VERSION=23.5.2-0 \
+    CONDA_VERSION=22.5.2-0
 
-ENV CONDA_VERSION=4.12.0
-
-# Install Anaconda
 WORKDIR /tmp
 
-RUN curl -k -o /tmp/Anaconda3-${ANACONDA_VERSION}-Linux-x86_64.sh https://repo.anaconda.com/archive/Anaconda3-${ANACONDA_VERSION}-Linux-x86_64.sh  && \
-    /bin/bash Anaconda3-${ANACONDA_VERSION}-Linux-x86_64.sh -f -b -p $CONDA_DIR && \
-    rm Anaconda3-${ANACONDA_VERSION}-Linux-x86_64.sh && \
-    echo "conda ${CONDDA_VERSON}" >> $CONDA_DIR/conda-meta/pinned && \
+# Install Miniconda
+RUN wget --quiest https://repo.anaconda.com/miniconda/Miniconda3-py310 ${MINICONDA_VERSION}-Linux-x86_64.sh && \
+    /bin/bash Miniconda3-py310_${MINICONDA_VERSION}-Linux-x86_64.sh -f -b -p $CONDA_DIR && \
+    rm -f Miniconda3-${CONDA_VERSION}-Linux-x86_64.sh && \
     conda config --set ssl_verify false && \
     conda config --system --prepend channels conda-forge && \
     conda config --system --set auto_update_conda false && \
     conda config --system --set show_channel_urls true && \
     conda config --system --set channel_priority flexible && \
-    #conda config --system --set channel_priority strict && \
-    if $PYTHON_VERSION; then conda install --quiet --yes python=$PYTHON_VERSION; fi && \
+    if [ !$PYTHON_VERSION = 'default']; then conda install --yes python=$PYTHON_VERSION; fi && \
     conda list python | grep '^python ' | tr -s ' ' | cut -d '.' -f 1,2 | sed 's/$/.*/' >> $CONDA_DIR/conda-meta/pinned && \
-    #conda install --update-deps --quiet --yes conda && \
     conda install --quiet --yes conda && \
     conda install --quiet --yes pip && \
-    #pip install --upgrade --no-cache-dir pip && \
     conda update --all --quiet --yes && \
     conda clean --all -f -y && \
     rm -rf /home/$NB_USER/.cache && \
     fix-permissions $CONDA_DIR && \
     fix-permissions /home/$NB_USER
 
-# Install Tini
-RUN conda config --set ssl_verify false && \
-    conda install --quiet --yes 'tini=0.18.0' && \
-    conda list tini | grep tini | tr -s ' ' | cut -d ' ' -f 1,2 >> $CONDA_DIR/conda-meta/pinned && \
+# Install Jupyter
+RUN conda install --quiet --yes \
+    notebook \
+    jupyterhub \
+    jupyterlab \
+    ipywidgets && \
     conda clean --all -f -y  && \
+    npm cache clean --force && \
+    rm -rf $CONDA_DIR/share/jupyter/lab/staging && \
+    rm -rf /home/$NB_USER/.cache && \
     fix-permissions $CONDA_DIR && \
     fix-permissions /home/$NB_USER
 
 # Install Tensorflow
-RUN conda config --set ssl_verify false && \
-    conda install --quiet --yes tensorflow=$TENSORFLOW_VERSION && \
-    conda clean --yes --all && \
-    fix-permissions $CONDA_DIR && \
-    fix-permissions /home/$NB_USER;
+#RUN conda config --set ssl_verify false && \
+#    conda install --quiet --yes tensorflow=$TENSORFLOW_VERSION && \
+#    conda clean --yes --all && \
+#    fix-permissions $CONDA_DIR && \
+#    fix-permissions /home/$NB_USER;
 
 # Install Pytorch
 RUN conda config --set ssl_verify false && \
@@ -110,7 +146,6 @@ RUN conda config --set ssl_verify false && \
     conda clean --yes --all && \
     fix-permissions $CONDA_DIR && \
     fix-permissions /home/$NB_USER;
-
 
 # Install Other Libraries with conda
 RUN conda config --set ssl_verify false && \
