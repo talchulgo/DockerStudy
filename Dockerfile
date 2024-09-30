@@ -1,37 +1,24 @@
 #################### Configuration Begin ##############################
+## 24.09.30 Modify ##
 
 # Base Container Image
-FROM nvidia/cuda:11.4.2-cudnn8-devel-centos8
+#FROM nvidia/cuda:11.4.2-cudnn8-devel-centos8
+FROM ubuntu:22.04
 
-# Anaconda & Python version config
-ARG ANACONDA_VERSION=2022.05
-#ARG PYTHON_VERSION=3.7
-
-# Tensorflow version config - comment below if you don't want to install tensorflow
-ARG TENSORFLOW_VERSION=2.9.1
-#ARG TENSORFLOW_VERSION=2.8.2
-
-# Pytorch version config - comment below if you don't want to install pytorch
-ARG PYTORCH_VERSION=1.11.0
-
-#################### Configuration End ##############################
-
-LABEL maintainer="CloudHUB <support@brickcloud.co.kr>"
+LABEL maintainer="P)EIC teck Part <kohs8208@posco.com>"
 
 ARG NB_USER="posco"
-ARG NB_UID="1000"
-ARG NB_GID="100"
+ARG NB_UID="10000"
+ARG NB_GID="10000"
 
 # Fix DL4006
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 USER root
 
-# Install OS dependencies
-RUN sed -i -e 's/mirrorlist/#mirrorlist/g' -e 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-Linux-* && \
-    yum install -y bzip2 wget sudo ca-certificates && \
-    #yum update -y && \
-    yum clean all && rm -rf /var/cache/yum/* /tmp/* /root/.cache
+# install all OS dependencies for notebook server that starts but lacks all
+# features (e.g., download as all possible file formats)
+ENV DEBIAN_FRONTEND noninteractive
 
 # Configure Container Environment
 ENV CONDA_DIR=/opt/conda \
